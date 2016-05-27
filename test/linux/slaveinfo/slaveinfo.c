@@ -505,6 +505,77 @@ void si_sdo(int cnt)
     }
 }
 
+static int moog_write8 (uint16 slave, uint16 index, uint8 subindex, uint8 value)
+{
+   int wkc;
+
+   wkc = ec_SDOwrite (slave, index, subindex, FALSE, sizeof(value), &value,
+                      EC_TIMEOUTRXM);
+   return wkc;
+}
+
+static int moog_write16 (uint16 slave, uint16 index, uint8 subindex, uint16 value)
+{
+   int wkc;
+
+   wkc = ec_SDOwrite (slave, index, subindex, FALSE, sizeof(value), &value,
+                      EC_TIMEOUTRXM);
+   return wkc;
+}
+
+static int moog_write32 (uint16 slave, uint16 index, uint8 subindex, uint32 value)
+{
+   int wkc;
+
+   wkc = ec_SDOwrite (slave, index, subindex, FALSE, sizeof(value), &value,
+                      EC_TIMEOUTRXM);
+   return wkc;
+}
+
+static int moog_setup(uint16 slave)
+{
+   int wkc = 0;
+
+   printf ("Moog drive setup\n");
+
+   wkc += moog_write8 (slave, 0x1C12, 0, 0);
+   wkc += moog_write8 (slave, 0x1C13, 0, 0);
+
+   wkc += moog_write8  (slave, 0x1A00, 0, 0);
+   wkc += moog_write32 (slave, 0x1A00, 1, 0x60410010);
+   wkc += moog_write32 (slave, 0x1A00, 2, 0x60640020);
+   wkc += moog_write8  (slave, 0x1A00, 0, 2);
+
+   wkc += moog_write8  (slave, 0x1600, 0, 0);
+   wkc += moog_write32 (slave, 0x1600, 1, 0x60400010);
+   wkc += moog_write32 (slave, 0x1600, 2, 0x607A0020);
+   wkc += moog_write8  (slave, 0x1600, 0, 2);
+
+   wkc += moog_write16 (slave, 0x1C12, 1, 0x1600);
+   wkc += moog_write16 (slave, 0x1C12, 0, 1);
+
+   wkc += moog_write16 (slave, 0x1C13, 1, 0x1A00);
+   wkc += moog_write16 (slave, 0x1C13, 0, 1);
+
+   /* Explicitly set flags that are (probably) invalid in EEPROM */
+   ec_slave[slave].SM[2].SMflags = 0x10024;
+
+   /* Explicitly disable sync managers that are activated by EEPROM */
+   ec_slave[slave].SM[4].StartAddr = 0;
+   ec_slave[slave].SM[5].StartAddr = 0;
+
+   /* Set a slave name */
+   strncpy (ec_slave[slave].name, "MOOG", EC_MAXNAME);
+
+   if (wkc != 14)
+   {
+      printf ("Moog setup failed\n");
+      return -1;
+   }
+
+   return 0;
+}
+
 void slaveinfo(char *ifname)
 {
    int cnt, i, j, nSM;
@@ -518,8 +589,25 @@ void slaveinfo(char *ifname)
    {
       printf("ec_init on %s succeeded.\n",ifname);
       /* find and auto-config slaves */
-      if ( ec_config(FALSE, &IOmap) > 0 )
+      if ( ec_config_init (FALSE) > 0 )
       {
+         if (ec_slavecount > 0)
+         {
+            int slave_ix;
+            for(slave_ix = 1; slave_ix <= ec_slavecount; slave_ix++)
+            {
+               ec_slavet * slave = &ec_slave[slave_ix];
+
+               // Moog drive
+               if(slave->eep_man == 0x28 && slave->eep_id == 0x1E0)
+               {
+                  printf ("Found Moog drive\n");
+                  slave->PO2SOconfig = moog_setup;
+               }
+            }
+         }
+
+         ec_config_map (&IOmap);
          ec_configdc();
          while(EcatError) printf("%s", ec_elist2string());
          printf("%d slaves found and configured.\n",ec_slavecount);
