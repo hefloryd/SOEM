@@ -784,9 +784,9 @@ int ecx_readstate(ecx_contextt *context)
          configadr = context->slavelist[slave].configadr;
          rval = etohs(sl[slave - fslave].alstatus);
          context->slavelist[slave].ALstatuscode = etohs(sl[slave - fslave].alstatuscode);
-         if (rval < lowest)
+         if ((rval & 0xf) < lowest)
          {
-            lowest = rval;
+            lowest = (rval & 0xf);
          }
          context->slavelist[slave].state = rval;
          context->slavelist[0].ALstatuscode |= context->slavelist[slave].ALstatuscode;
@@ -800,26 +800,29 @@ int ecx_readstate(ecx_contextt *context)
 
 /** Write slave state, if slave = 0 then write to all slaves.
  * The function does not check if the actual state is changed.
- * @param[in]  context = context struct
+ * @param[in]  context        = context struct
  * @param[in] slave    = Slave number, 0 = master
- * @return 0
+ * @return Workcounter or EC_NOFRAME
  */
 int ecx_writestate(ecx_contextt *context, uint16 slave)
 {
+   int ret;
    uint16 configadr, slstate;
 
    if (slave == 0)
    {
       slstate = htoes(context->slavelist[slave].state);
-      ecx_BWR(context->port, 0, ECT_REG_ALCTL, sizeof(slstate), &slstate, EC_TIMEOUTRET3); /* write slave status */
+      ret = ecx_BWR(context->port, 0, ECT_REG_ALCTL, sizeof(slstate),
+	            &slstate, EC_TIMEOUTRET3);
    }
    else
    {
       configadr = context->slavelist[slave].configadr;
 
-      ecx_FPWRw(context->port, configadr, ECT_REG_ALCTL, htoes(context->slavelist[slave].state), EC_TIMEOUTRET3); /* write slave status */
+      ret = ecx_FPWRw(context->port, configadr, ECT_REG_ALCTL,
+	        htoes(context->slavelist[slave].state), EC_TIMEOUTRET3);
    }
-   return 0;
+   return ret;
 }
 
 /** Check actual slave state.
@@ -1620,6 +1623,18 @@ static int ecx_pullindex(ecx_contextt *context)
    return rval;
 }
 
+/** 
+ * Clear the idx stack.
+ * 
+ * @param context           = context struct
+ */
+static void ecx_clearindex(ecx_contextt *context)  {
+
+   context->idxstack->pushed = 0;
+   context->idxstack->pulled = 0;
+
+}
+
 /** Transmit processdata to slaves.
  * Uses LRW, or LRD/LWR if LRW is not allowed (blockLRW).
  * Both the input and output processdata are transmitted.
@@ -1652,11 +1667,7 @@ int ecx_send_processdata_group(ecx_contextt *context, uint8 group)
    LogAdr = context->grouplist[group].logstartaddr;
    if (length)
    {
-      if(!group)
-      {
-         context->idxstack->pushed = 0;
-         context->idxstack->pulled = 0;
-      }
+
       wkc = 1;
       /* LRW blocked by one or more slaves ? */
       if (context->grouplist[group].blockLRW)
@@ -1859,6 +1870,8 @@ int ecx_receive_processdata_group(ecx_contextt *context, uint8 group, int timeou
       /* get next index */
       pos = ecx_pullindex(context);
    }
+
+   ecx_clearindex(context);
 
    /* if no frames has arrived */
    if (valid_wkc == 0)
