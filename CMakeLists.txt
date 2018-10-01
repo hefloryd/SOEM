@@ -6,10 +6,14 @@ if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   # Default to installing in SOEM source directory
   set(CMAKE_INSTALL_PREFIX ${CMAKE_SOURCE_DIR}/install)
 endif()
+message("CMAKE_INSTALL_PREFIX is ${CMAKE_INSTALL_PREFIX}")
 
 set(SOEM_INCLUDE_INSTALL_DIR include/soem)
 set(SOEM_LIB_INSTALL_DIR lib)
 set(BUILD_TESTS TRUE)
+
+option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
+message("BUILD_SHARED_LIBS is ${BUILD_SHARED_LIBS}")
 
 if(WIN32)
   set(OS "win32")
@@ -60,12 +64,23 @@ include_directories(osal)
 include_directories(osal/${OS})
 include_directories(oshw/${OS})
 
-add_library(soem STATIC
-  ${SOEM_SOURCES}
-  ${OSAL_SOURCES}
-  ${OSHW_SOURCES}
-  ${OSHW_EXTRA_SOURCES})
-target_link_libraries(soem ${OS_LIBS})
+
+
+if(BUILD_SHARED_LIBS)
+  add_library(soem SHARED
+    ${SOEM_SOURCES}
+    ${OSAL_SOURCES}
+    ${OSHW_SOURCES}
+    ${OSHW_EXTRA_SOURCES})
+  target_link_libraries(soem ${OS_LIBS})
+else()
+  add_library(soem STATIC
+    ${SOEM_SOURCES}
+    ${OSAL_SOURCES}
+    ${OSHW_SOURCES}
+    ${OSHW_EXTRA_SOURCES})
+    target_link_libraries(soem ${OS_LIBS})
+endif()
 
 message("LIB_DIR: ${SOEM_LIB_INSTALL_DIR}")
 
@@ -76,7 +91,7 @@ install(FILES
   ${OSHW_HEADERS}
   DESTINATION ${SOEM_INCLUDE_INSTALL_DIR})
 
-if(BUILD_TESTS) 
+if(BUILD_TESTS)
   add_subdirectory(test/linux/slaveinfo)
   add_subdirectory(test/linux/eepromtool)
   add_subdirectory(test/linux/simple_test)
